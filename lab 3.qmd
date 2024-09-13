@@ -1,0 +1,129 @@
+---
+title: "PM 566 Lab 3"
+author: "Erica Shin"
+format: html
+editor: visual
+---
+
+## Exercise 1
+
+```{r}
+install.packages('R.utils')
+
+library(R.utils)
+
+download.file(
+  "https://raw.githubusercontent.com/USCbiostats/data-science-data/master/02_met/met_all.gz",
+  destfile = file.path("~", "Downloads", "met_all.gz"),
+  method   = "libcurl",
+  timeout  = 60
+)
+
+met <- data.table::fread(file.path("~", "Downloads", "met_all.gz"))
+met <- as.data.frame(met)
+```
+
+## Exercise 2
+
+```{r}
+dim(met)
+nrow(met)
+ncol(met)
+```
+
+There are 2,377,343 rows and 30 columns.
+
+## Exercise 3
+
+```{r}
+str(met)
+```
+
+Variables of interest are: year, day, hour, elev, temp, and wind.sp.
+
+## Exercise 4
+
+```{r}
+table(met$year)
+
+table(met$day)
+
+table(met$hour)
+
+summary(met$temp)
+
+summary(met$elev)
+
+summary(met$wind.sp)
+
+met[met$elev==9999.0, "elev"] <- NA
+summary(met$elev)
+
+met <- met[met$temp > -40, ]
+head(met[order(met$temp), ])
+```
+
+There are 710 missing values in the wind speed variable.
+
+## Exercise 5
+
+The suspicious temperature value of -17.2C has a location with a latitude of 38.767 and a longitude of -104.3. This is located in Yoder, Colorado.
+
+It does not seem reasonable that Yoder, Colorado would have a temperature reading of -17.2C in August.
+
+This location is near the USAF Academy Bullseye Auxiliary Airfield in Yoder, Colorado, which has an elevation of approximately **6,036 ft (1,840 m)**. Therefore, the range of elevations make sense (-13m to 4113m).
+
+## Exercise 6
+
+```{r}
+elev <- met[which(met$elev == max(met$elev, na.rm = TRUE)), ]
+summary(elev)
+
+cor(elev$temp, elev$wind.sp, use="complete")
+
+cor(elev$temp, elev$hour, use="complete")
+
+cor(elev$wind.sp, elev$day, use="complete")
+
+cor(elev$wind.sp, elev$hour, use="complete")
+
+cor(elev$temp, elev$day, use="complete")
+```
+
+## Exercise 7
+
+```{r}
+install.packages("leaflet")
+
+library(leaflet)
+
+leaflet(elev) %>%
+  addProviderTiles('OpenStreetMap') %>% 
+  addCircles(lat=~lat,lng=~lon, opacity=1, fillOpacity=1, radius=100)
+
+library(lubridate)
+elev$date <- with(elev, ymd_h(paste(year, month, day, hour, sep= ' ')))
+summary(elev$date)
+
+elev <- elev[order(elev$date), ]
+head(elev)
+
+#histograms of the elevation, temperature, and wind speed variables for the whole dataset
+
+
+hist(met$elev)
+
+hist(met$temp)
+
+hist(met$wind.sp)
+
+#line graphs of temperature vs. date and wind speed vs. date
+
+plot(met$temp, met$date)
+
+plot(met$wind.sp, met$date)
+```
+
+## Exercise 8
+
+What does "qc" mean for some of the data variable names?
