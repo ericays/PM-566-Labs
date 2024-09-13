@@ -3,12 +3,13 @@ title: "PM 566 Lab 3"
 author: "Erica Shin"
 format: html
 editor: visual
+embed-resources: true
 ---
 
 ## Exercise 1
 
 ```{r}
-install.packages('R.utils')
+#install.packages('R.utils')
 
 library(R.utils)
 
@@ -93,7 +94,7 @@ cor(elev$temp, elev$day, use="complete")
 ## Exercise 7
 
 ```{r}
-install.packages("leaflet")
+#install.packages("leaflet")
 
 library(leaflet)
 
