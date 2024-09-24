@@ -1,0 +1,200 @@
+---
+title: "PM 566 Lab 4"
+author: "Erica Shin"
+format: html
+editor: visual
+embed-resources: true
+---
+
+## Exercise 1
+
+```{r}
+if (!file.exists("met_all.gz"))
+  download.file(
+    url = "https://raw.githubusercontent.com/USCbiostats/data-science-data/master/02_met/met_all.gz",
+    destfile = "met_all.gz",
+    method   = "libcurl",
+    timeout  = 60
+    )
+met <- data.table::fread("met_all.gz")
+
+library(data.table)
+```
+
+## Exercise 2
+
+```{r}
+#removing temperatures less than -17 degrees Celsius
+met <- met[met$temp > -17][elev == 9999.0, elev := NA]
+
+#date variable
+
+#making new dataset and adding date variable
+met_new <- met[,.(
+  date = as.Date(paste(year, month, day, sep = "-"))
+)]
+
+#met$date <- paste(met$year, met$month, met$day, sep="-")
+
+#adding date variable to existing dataset
+met$date <- as.Date(paste(met$year, met$month, met$day, sep = "-"))
+
+#first week
+met$firstweek <- data.table::week(met$date)
+
+met <- met[met$firstweek == 31]
+
+#mean variables
+met_avg <- met[,.(
+  temp = mean(temp, na.rm=TRUE),
+  rh = mean(rh, na.rm=TRUE),
+  wind.sp = mean(wind.sp, na.rm=TRUE),
+  vis.dist = mean(vis.dist, na.rm=TRUE),
+  dew.point = mean(dew.point, na.rm=TRUE),
+  lat = mean(lat, na.rm=TRUE),
+  lon = mean(lon, na.rm=TRUE),
+  elev = mean(elev, na.rm=TRUE)
+), by=c("USAFID", "day")]
+
+#creating region variable
+met_avg[, region1 := fifelse(lat > 39.71, "N", "S")]
+met_avg[, region2 := fifelse(lon > -98, "E", "W")]
+met_avg$region <- paste(met_avg$region1, met_avg$region2, sep="")
+
+```
+
+## Exercise 3
+
+```{r}
+library(tidyverse)
+library(data.table)
+library(ggplot2)
+
+met_avg[!is.na(wind.sp)] |>
+  ggplot()+
+  geom_violin(mapping=aes(x=1, y=wind.sp, fill=region)) +
+  facet_wrap(~ region, nrow=1)
+
+met_avg[!is.na(dew.point)] |>
+  ggplot()+
+  geom_violin(mapping=aes(x=1, y=dew.point, fill=region)) +
+  facet_wrap(~ region, nrow=1)
+```
+
+## Exercise 4
+
+```{r}
+library(cowplot) #to use plot_grid
+
+#using position=jitter in geom_point
+nojitter <- ggplot(data=met_avg) +
+  geom_point(mapping=aes(x=dew.point, y=wind.sp, fill=region))
+
+jitter <- ggplot(data=met_avg) +
+  geom_point(mapping=aes(x=dew.point, y=wind.sp, fill=region), position="jitter")
+
+plot_grid(nojitter, jitter, labels = "AUTO")
+
+#using geom_jitter
+nojitter1 <- ggplot(met_avg, aes(dew.point, wind.sp, colour=region)) + 
+  stat_smooth() +
+  geom_point()
+
+jitter1 <- ggplot(met_avg, aes(dew.point, wind.sp, colour=region)) + 
+  stat_smooth() +
+  geom_point() +
+  geom_jitter(width=1, height=1)
+
+plot_grid(nojitter1, jitter1, labels = "AUTO")
+
+```
+
+## Exercise 5
+
+```{r}
+met_avg[, elev_cat := fifelse(elev > 252, "high", "low")]
+
+met_avg[!is.na(elev_cat)] |>
+  ggplot() +
+  geom_bar(mapping=aes(x=elev_cat, fill=region), position="dodge") + 
+  scale_fill_brewer(palette = "PiYG") + 
+  labs(title = "Barplots of Elevation Category Colored by Region") +
+  labs(x="Elevation Category", y="Count of Weather Stations")
+```
+
+## Exercise 6
+
+```{r}
+summary <- met_avg[!is.na(dew.point) & !is.na(wind.sp)] |>
+  ggplot(mapping=aes(x=dew.point, y=wind.sp, colour=region)) +
+  stat_summary(
+               fun.min=min,
+               fun.max=max,
+               fun=median,
+               fun.data="mean_sdl"
+               )
+summary
+
+#why is errorbar not working??
+
+#  stat_summary(
+#               fun.min=min,
+#               fun.max=max,
+#               fun=median,
+#               fun.data="mean_sdl"
+#               ) +
+#  geom_errorbar(aes(ymin=min, ymax=max))
+```
+
+## Exercise 7
+
+```{r}
+library(leaflet)
+
+#dataset with mean rh
+met_avg2 <- met[,.(rh = mean(rh, na.rm=TRUE), lat = mean(lat), lon = mean(lon)), by=c("USAFID")]
+met_avg2 <- met_avg2[!is.na(rh)]
+
+#generating a color palette
+rh.pal <- colorNumeric(c('lightgreen','pink','purple'), domain=met_avg2$rh)
+rh.pal
+
+#leaflet
+top_rh <- met_avg2 |>
+  filter(rank(-rh) <= 10)
+
+rh_map <- leaflet(met_avg2) |>
+  addProviderTiles("CartoDB.Positron") |>
+  addCircles(lat=~lat, 
+             lng=~lon,
+             color=~rh.pal(rh)) |>
+  addMarkers(data=top_rh,
+             lat=~lat, 
+             lng=~lon,
+             clusterOptions = markerClusterOptions()) |>
+  addLegend(position='bottomleft', pal=rh.pal, values=~rh, title="Relative Humidity (%)")
+
+rh_map
+```
+
+## Exercise 8
+
+```{r}
+#regular boxplot
+ggplot(met_avg, aes(dew.point, wind.sp, group=region)) +
+  geom_boxplot()
+
+#ggplot extension
+library(gganimate)
+
+ggplot(met_avg, aes(dew.point, wind.sp, group=region)) +
+  geom_boxplot() +
+  transition_states(
+    region,
+    transition_length = 2,
+    state_length = 1
+  ) +
+  enter_fade() + 
+  exit_shrink() +
+  ease_aes('sine-in-out')
+```
