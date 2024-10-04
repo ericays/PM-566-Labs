@@ -1,0 +1,246 @@
+---
+title: "PM 566 Lab 5"
+author: "Erica Shin"
+format: html
+editor: visual
+embed-resources: true
+---
+
+## Setup in R
+
+```{r}
+library(dplyr)
+library(dtplyr)
+library(data.table)
+
+# met data
+if (!file.exists("met_all.gz"))
+  download.file(
+    url = "https://raw.githubusercontent.com/USCbiostats/data-science-data/master/02_met/met_all.gz",
+    destfile = "met_all.gz",
+    method   = "libcurl",
+    timeout  = 60
+    )
+met <- data.table::fread("met_all.gz")
+
+# Download the data
+stations <- fread("https://noaa-isd-pds.s3.amazonaws.com/isd-history.csv")
+stations[, USAF := as.integer(USAF)]
+#stations <- as.data.frame(stations)
+
+# Dealing with NAs and 999999
+stations[, USAF   := fifelse(USAF == 999999, NA_integer_, USAF)]
+stations[, CTRY   := fifelse(CTRY == "", NA_character_, CTRY)]
+stations[, STATE  := fifelse(STATE == "", NA_character_, STATE)]
+
+# Selecting the three relevant columns, and keeping unique records
+stations <- unique(stations[, list(USAF, CTRY, STATE)])
+
+# Dropping NAs
+stations <- stations[!is.na(USAF)]
+
+# Removing duplicates
+stations[, n := 1:.N, by = .(USAF)]
+stations <- stations[n == 1,][, n := NULL]
+
+#stations <- as.data.frame(stations)
+
+# Merging
+dat <- merge(
+  # Data
+  x     = met,      
+  y     = stations, 
+  # List of variables to match
+  by.x  = "USAFID",
+  by.y  = "USAF", 
+  # Which obs to keep?
+  all.x = TRUE,      
+  all.y = FALSE
+  )
+
+head(dat[, c('USAFID', 'WBAN', 'STATE')], n = 4)
+
+#changing combined dataset from data.table to data.frame
+dat <- as.data.frame(dat)
+
+```
+
+## **Question 1: Representative station for the US**
+
+```{r}
+#temp
+quantile(dat$temp, na.rm=TRUE)
+
+#wind speed
+quantile(dat$wind.sp, na.rm=TRUE)
+
+#atm pressure
+quantile(dat$atm.press, na.rm=TRUE)
+
+#finding median values
+median_temp <- quantile(dat$temp, na.rm=TRUE, 0.5)
+median_wind <- quantile(dat$wind.sp, na.rm=TRUE, 0.5)
+median_press <- quantile(dat$atm.press, na.rm=TRUE, 0.5)
+
+closest_temp_ID <- dat[which.min(abs(dat$temp - median_temp)), "USAFID"]
+closest_wind_ID <- dat[which.min(abs(dat$wind.sp - median_wind)), "USAFID"]
+closest_press_ID <- dat[which.min(abs(dat$atm.press - median_press)), "USAFID"]
+
+#viewing all station IDs
+c(closest_temp_ID, closest_wind_ID, closest_press_ID)
+```
+
+Two out of the three stations coincide. The weather stations are 720113 and 690150.
+
+## **Question 2: Representative station per state**
+
+```{r}
+medians_by_state <- dat |>
+  group_by(STATE) |>
+  summarize(
+    median_temp = median(temp, na.rm = TRUE),
+    median_wind = median(wind.sp, na.rm = TRUE),
+    median_press = median(atm.press, na.rm = TRUE)
+  )
+
+medians_by_state
+
+median_stations <- dat |>
+  group_by(STATE) |>
+  summarize(
+    rep_temp = USAFID[which.min(abs(temp - medians_by_state$median_temp[match(STATE, medians_by_state$STATE)]))],
+  rep_wind = USAFID[which.min(abs(wind.sp - medians_by_state$median_wind[match(STATE, medians_by_state$STATE)]))],
+    rep_press = USAFID[which.min(abs(atm.press - medians_by_state$median_press[match(STATE, medians_by_state$STATE)]))]
+  )
+
+median_stations
+```
+
+```{r}
+median_list <- c(median_temp, median_wind, median_press)
+
+#creating function to calculate euclidean distance
+euclid_dist <- function(temp, wind, pressure) {
+  sqrt((temp - median_list[1])^2 + 
+       (wind - median_list[2])^2 + 
+       (pressure - median_list[3])^2)
+}
+
+#calculating distances for each station
+dat1 <- dat |>
+  rowwise() |>
+  mutate(distance = euclid_dist(temp, wind.sp, atm.press)) |>
+  ungroup()
+
+#finding the representative station per state
+representative_per_state <- dat1 |>
+  group_by(STATE) |>
+  filter(distance == min(distance, na.rm = TRUE)) |>
+  arrange(lat) |>
+  slice(1)
+
+#printing results
+print(representative_per_state)
+```
+
+## **Question 3: In the middle?**
+
+```{r}
+library(leaflet)
+
+#creating data frame that contains all midpoints of the 50 states
+midpoints <- data.frame(
+  STATE = c("Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", 
+            "Delaware", "Florida", "Georgia", "Hawaii", "Idaho", "Illinois", "Indiana", 
+            "Iowa", "Kansas", "Kentucky", "Louisiana", "Maine", "Maryland", "Massachusetts", 
+            "Michigan", "Minnesota", "Mississippi", "Missouri", "Montana", "Nebraska", 
+            "Nevada", "New Hampshire", "New Jersey", "New Mexico", "New York", "North Carolina", 
+            "North Dakota", "Ohio", "Oklahoma", "Oregon", "Pennsylvania", "Rhode Island", 
+            "South Carolina", "South Dakota", "Tennessee", "Texas", "Utah", "Vermont", 
+            "Virginia", "Washington", "West Virginia", "Wisconsin", "Wyoming"),
+  Latitude = c(32.8060, 61.3704, 34.1682, 34.9697, 36.7783, 39.5501, 41.5978, 39.3185,
+               27.7663, 33.0406, 21.0943, 44.2405, 40.6331, 39.7663, 42.0046, 39.0119,
+               37.6681, 31.1695, 45.3676, 39.0639, 42.2302, 43.3266, 46.3920, 32.7416,
+               37.9643, 46.9219, 41.4925, 38.5020, 43.1939, 40.2989, 34.8405, 43.2994,
+               35.6309, 47.5369, 40.4173, 35.5653, 43.8041, 40.5908, 41.5801, 33.8569,
+               44.2998, 35.7478, 31.9686, 39.3200, 44.0459, 37.4316, 47.7511, 38.5976,
+               43.7844, 43.0759),
+  Longitude = c(-86.7911, -152.4044, -111.9300, -92.3731, -119.4179, -105.7821, -72.7554,
+                -75.5071, -81.6868, -83.6431, -157.4983, -114.4788, -89.3985, -86.4413,
+                -93.2113, -98.4842, -84.6701, -91.8671, -68.9722, -76.8021, -71.5301,
+                -84.5361, -94.6360, -89.6787, -91.8318, -110.4544, -99.9018, -116.3009,
+                -71.5724, -74.5210, -106.2485, -74.2179, -79.8064, -99.7930, -82.9071,
+                -96.9289, -120.5542, -77.2098, -71.4774, -80.9450, -99.4389, -86.6923,
+                -99.9018, -111.0937, -72.7107, -78.6569, -120.7401, -80.4549, -88.7879,
+                -107.2903)
+)
+
+midpoints
+
+closest_stations <- midpoints |>
+  rowwise() |>
+  mutate(
+    USAFID = dat$USAFID[which.min(sqrt((dat$lat - Latitude)^2 + (dat$lon - Longitude)^2))]
+  ) |>
+  ungroup()
+
+combined <- closest_stations |>
+  left_join(dat |> select(USAFID, lat, lon), by = "USAFID")
+
+map <- leaflet() |>
+  addTiles()  
+
+map <- map |>
+  addCircleMarkers(data = combined,
+                   ~lon, ~lat,
+                   color = "red",  # Color for closest station midpoints
+                   radius = 5,
+                   popup = ~paste("Station ID:", USAFID))
+map <- map |>
+  addCircleMarkers(data = midpoints,
+                   ~Longitude, ~Latitude,
+                   color = "blue",  # Color for state midpoints
+                   radius = 7,
+                   label = ~paste("State Midpoint:", STATE),
+                   group = "State Midpoints")
+map
+```
+
+## **Question 4: Means of means**
+
+```{r}
+#calculating average temperature for each state
+average_temps <- dat |>
+  group_by(STATE) |>
+  summarize(
+    avg_temp = mean(temp, na.rm = TRUE),
+    avg_wind = mean(wind.sp, na.rm = TRUE),
+    avg_press = mean(atm.press, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+#classifying states based on average temperature
+average_temps <- average_temps |>
+  mutate(temp_level = case_when(
+    avg_temp < 20 ~ "Low",
+    avg_temp >= 20 & avg_temp < 25 ~ "Mid",
+    avg_temp >= 25 ~ "High"
+  ))
+
+#generating the summary table
+summary_table <- average_temps |>
+  group_by(temp_level) |>
+  summarize(
+    num_entries = n(),
+    num_na_entries = sum(is.na(dat$temp)),
+    num_stations = n_distinct(dat$USAFID),
+    num_states = n_distinct(dat$STATE),
+    mean_temp = mean(dat$temp, na.rm = TRUE),
+    mean_wind = mean(dat$wind.sp, na.rm = TRUE),
+    mean_press = mean(dat$atm.press, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+#displaying the summary table
+print(summary_table)
+```
