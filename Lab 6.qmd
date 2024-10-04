@@ -1,0 +1,131 @@
+---
+title: "Lab 6"
+author: "Erica Shin"
+format: html
+editor: visual
+embed-resources: true
+---
+
+```{r}
+#set up packages
+#install.packages("tidytext")
+library(tidytext)
+library(dplyr)
+library(ggplot2)
+
+#read in Medical Transcriptions
+library(readr)
+library(dplyr)
+mt_samples <- read_csv("https://raw.githubusercontent.com/USCbiostats/data-science-data/master/00_mtsamples/mtsamples.csv")
+mt_samples <- mt_samples |>
+  select(description, medical_specialty, transcription)
+
+head(mt_samples)
+```
+
+## **Question 1: What specialties do we have?**
+
+```{r}
+mt_samples |>
+  count(medical_specialty, sort = TRUE)
+
+specialty_count <- mt_samples |>
+  count(medical_specialty, sort = TRUE)
+
+barplot(specialty_count$n, names.arg = specialty_count$medical_specialty)
+```
+
+There are 40 medical specialties. The categories seem related but also fairly distinct. The categories do not appear to be evenly distributed per barplot.
+
+## **Question 2:** 
+
+```{r}
+#tokenizing
+
+mt_samples |>
+  unnest_tokens(token, transcription)
+
+#counting each token
+mt_samples |>
+  unnest_tokens(token, transcription) |> 
+  count(token, sort=TRUE)
+
+library(forcats) #for fct_reorder
+
+#visualizing top 20 tokens
+mt_samples |>
+  unnest_tokens(token, transcription) |>
+  count(token) |>
+  top_n(20, n) |>
+  ggplot(aes(n, fct_reorder(token, n))) +
+  geom_col()
+```
+
+The top 20 most frequent words mostly seem to be stop words other than "right" and "patient." There is not much insight we can get from these results.
+
+## **Question 3:** 
+
+```{r}
+#removing stopwords and visualizing
+mt_samples |>
+  unnest_tokens(token, transcription) |> 
+  anti_join(stop_words, by=c("token" = "word")) |>
+  count(token, sort=TRUE) |>
+  top_n(20, n) |>
+  ggplot(aes(n, fct_reorder(token, n))) +
+  geom_col()
+```
+
+Now that we removed stop words, we have a better idea of what the text is about because there is more medical context/terminology such as "patient", "history", "time", "blood", "skin", etc.
+
+## **Question 4:** 
+
+```{r}
+#tokenizing into bigrams and counting
+mt_samples |>
+  unnest_ngrams(ngram, transcription, n=2) |> 
+  count(ngram, sort=TRUE)
+
+#tokenizing into trigrams and counting
+mt_samples |>
+  unnest_ngrams(ngram, transcription, n=3) |> 
+  count(ngram, sort=TRUE)
+```
+
+Compared to bigrams, there is more than double the number of observations for trigrams (301k vs. 655k).
+
+## **Question 5:** 
+
+```{r}
+#installing tidyr to use separate function
+#install.packages("tidyr")
+library(tidyr)
+
+#picking a word and seeing what comes after it
+mt_samples |>
+  unnest_ngrams(ngram, transcription, n=2) |> 
+  separate(ngram, into=c("word1", "word2", sep=" ")) |>
+  select(word1, word2) |>
+  filter(word1 == "patient") |>
+  count(word2, sort=TRUE)
+
+#picking a word and seeing what comes before it
+mt_samples |>
+  unnest_ngrams(ngram, transcription, n=2) |> 
+  separate(ngram, into=c("word1", "word2", sep=" ")) |>
+  select(word1, word2) |>
+  filter(word2 == "patient") |>
+  count(word1, sort=TRUE)
+```
+
+## **Question 6:** 
+
+```{r}
+#finding 5 most used words in the specialties and removing stopwords
+mt_samples |>
+  unnest_tokens(token, transcription) |> 
+  anti_join(stop_words, by=c("token" = "word")) |>
+  group_by(medical_specialty) |>
+  count(token) |>
+  top_n(5, n)
+```
