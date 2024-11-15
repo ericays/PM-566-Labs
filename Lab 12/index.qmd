@@ -1,0 +1,10 @@
+---
+title: "PM 566 Lab 12"
+author: "Erica Shin"
+output: 
+    html_document:
+        toc: TRUE
+        toc_float: TRUE
+---
+
+This is my PM 566 Lab 12 website.
